@@ -9,7 +9,6 @@ import type {
   CreateProductInput,
   UpdateProductInput,
   ProductQueryInput,
-  VariantInput,
 } from './product.validation';
 
 export class ProductService {
@@ -30,7 +29,7 @@ export class ProductService {
     const product = await Product.transaction(async (trx) => {
       const { variants, initialStock, ...productData } = data;
 
-      const created = await Product.query(trx).insert({
+      const created: Product = await Product.query(trx).insert({
         ...productData,
         slug,
       } as any);
@@ -38,23 +37,29 @@ export class ProductService {
       // Create variants if provided
       if (variants && variants.length > 0) {
         for (const v of variants) {
-          const variant = await ProductVariant.query(trx).insert({
+          const variant: ProductVariant = await ProductVariant.query(trx).insert({
             ...v,
             productId: created.id,
-          });
+          } as any);
 
-          await InventoryService.upsertForVariant({
-            productId: created.id,
-            variantId: variant.id,
-            quantity: v.stock ?? 0,
-          });
+          await InventoryService.upsertForVariant(
+            {
+              productId: created.id,
+              variantId: variant.id,
+              quantity: v.stock ?? 0,
+            },
+            trx
+          );
         }
       } else {
         // No variants: create a default inventory row
-        await InventoryService.upsertForVariant({
-          productId: created.id,
-          quantity: initialStock ?? 0,
-        });
+        await InventoryService.upsertForVariant(
+          {
+            productId: created.id,
+            quantity: initialStock ?? 0,
+          },
+          trx
+        );
       }
 
       return created;
@@ -182,12 +187,15 @@ export class ProductService {
     }
 
     await Product.transaction(async (trx) => {
-      await Product.query(trx).patchAndFetchById(id, productData);
+      await Product.query(trx).patchAndFetchById(id, productData as any);
 
       // Replace variants if provided
       if (variants) {
         // Delete existing variants + their inventory
-        const existingVariants = await ProductVariant.query(trx).where('productId', id);
+        const existingVariants = await ProductVariant.query(trx).where(
+          'productId',
+          id
+        );
         for (const v of existingVariants) {
           await InventoryService.deleteByVariant(v.id);
         }
@@ -195,15 +203,18 @@ export class ProductService {
 
         // Create new variants
         for (const v of variants) {
-          const variant = await ProductVariant.query(trx).insert({
+          const variant: ProductVariant = await ProductVariant.query(trx).insert({
             ...v,
             productId: id,
-          });
-          await InventoryService.upsertForVariant({
-            productId: id,
-            variantId: variant.id,
-            quantity: v.stock ?? 0,
-          });
+          } as any);
+          await InventoryService.upsertForVariant(
+            {
+              productId: id,
+              variantId: variant.id,
+              quantity: v.stock ?? 0,
+            },
+            trx
+          );
         }
       } else if (initialStock !== undefined) {
         // Update stock on the default inventory row (no variants)
@@ -211,10 +222,13 @@ export class ProductService {
           .where('productId', id)
           .resultSize();
         if (hasVariants === 0) {
-          await InventoryService.upsertForVariant({
-            productId: id,
-            quantity: initialStock,
-          });
+          await InventoryService.upsertForVariant(
+            {
+              productId: id,
+              quantity: initialStock,
+            },
+            trx
+          );
         }
       }
     });
@@ -253,7 +267,6 @@ export class ProductService {
 
   private static sanitize(product: Product, isAdmin: boolean): Product {
     if (!isAdmin) {
-      // Strip costPrice from non-admin responses
       const obj: any = product;
       delete obj.costPrice;
     }
