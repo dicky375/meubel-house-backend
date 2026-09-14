@@ -9,6 +9,10 @@ export class User extends Model {
     return 'users';
   }
 
+  static get hidden() {
+    return ['password'];
+  }
+
   id!: string;
   email!: string;
   password!: string;
@@ -26,26 +30,17 @@ export class User extends Model {
       cart: {
         relation: Model.HasOneRelation,
         modelClass: Cart,
-        join: {
-          from: 'users.id',
-          to: 'carts.userId',
-        },
+        join: { from: 'users.id', to: 'carts.userId' },
       },
       orders: {
         relation: Model.HasManyRelation,
         modelClass: Order,
-        join: {
-          from: 'users.id',
-          to: 'orders.customerId',
-        },
+        join: { from: 'users.id', to: 'orders.customerId' },
       },
       reviews: {
         relation: Model.HasManyRelation,
         modelClass: Review,
-        join: {
-          from: 'users.id',
-          to: 'reviews.userId',
-        },
+        join: { from: 'users.id', to: 'reviews.userId' },
       },
     };
   }
@@ -68,9 +63,9 @@ export class User extends Model {
     return bcrypt.compare(candidatePassword, this.password);
   }
 
-  toJSON() {
-    const user = { ...this };
-    //delete user.password;
-    return user;
+  $formatJson(json: any) {
+    json = super.$formatJson(json);
+    delete json.password;
+    return json;
   }
 }
