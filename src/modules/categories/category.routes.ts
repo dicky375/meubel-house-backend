@@ -1,32 +1,18 @@
 import { Router } from 'express';
+import { CategoryController } from './category.controller';
 import { authenticate } from '../../middleware/auth';
 import { requireRole } from '../../middleware/role';
 
 const router = Router();
 
-// Public: List categories
-router.get('/', (req, res) => {
-  res.json({ message: 'List categories' });
-});
+// ─── Public routes ─────────────────────────────────
+router.get('/', CategoryController.list);
+router.get('/slug/:slug', CategoryController.getBySlug);
+router.get('/:id', CategoryController.getById);
 
-// Public: Get single category
-router.get('/:slug', (req, res) => {
-  res.json({ message: `Get category: ${req.params.slug}` });
-});
-
-// Admin: Create category
-router.post('/', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: 'Create category' });
-});
-
-// Admin: Update category
-router.put('/:id', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: `Update category: ${req.params.id}` });
-});
-
-// Admin: Delete category
-router.delete('/:id', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: `Delete category: ${req.params.id}` });
-});
+// ─── Admin-only routes ─────────────────────────────
+router.post('/', authenticate, requireRole(['ADMIN']), CategoryController.create);
+router.put('/:id', authenticate, requireRole(['ADMIN']), CategoryController.update);
+router.delete('/:id', authenticate, requireRole(['ADMIN']), CategoryController.delete);
 
 export default router;
