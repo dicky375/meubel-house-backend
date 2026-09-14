@@ -33,7 +33,7 @@ export class ProductService {
       const created = await Product.query(trx).insert({
         ...productData,
         slug,
-      });
+      } as any);
 
       // Create variants if provided
       if (variants && variants.length > 0) {

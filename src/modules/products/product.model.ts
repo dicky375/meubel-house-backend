@@ -21,7 +21,7 @@ export class Product extends Model {
   sku!: string;
   brand?: string;
   material?: string;
-  dimensions?: { length: number; width: number; height: number; unit: string };
+  dimensions?: { length?: number; width?: number; height?: number; unit?: string };
   weight?: number;
   tags?: string[];
   images?: string[];
@@ -39,34 +39,22 @@ export class Product extends Model {
       category: {
         relation: Model.BelongsToOneRelation,
         modelClass: Category,
-        join: {
-          from: 'products.categoryId',
-          to: 'categories.id',
-        },
+        join: { from: 'products.categoryId', to: 'categories.id' },
       },
       variants: {
         relation: Model.HasManyRelation,
         modelClass: ProductVariant,
-        join: {
-          from: 'products.id',
-          to: 'product_variants.productId',
-        },
+        join: { from: 'products.id', to: 'product_variants.productId' },
       },
       inventory: {
         relation: Model.HasManyRelation,
         modelClass: Inventory,
-        join: {
-          from: 'products.id',
-          to: 'inventory.productId',
-        },
+        join: { from: 'products.id', to: 'inventory.productId' },
       },
       reviews: {
         relation: Model.HasManyRelation,
         modelClass: Review,
-        join: {
-          from: 'products.id',
-          to: 'reviews.productId',
-        },
+        join: { from: 'products.id', to: 'reviews.productId' },
       },
     };
   }

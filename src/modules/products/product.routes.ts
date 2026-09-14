@@ -1,38 +1,19 @@
-
 import { Router } from 'express';
+import { ProductController } from './product.controller';
 import { authenticate } from '../../middleware/auth';
 import { requireRole } from '../../middleware/role';
+import { optionalAuth } from '../../middleware/optionalAuth';
 
 const router = Router();
 
-// Public: List products with filters
-router.get('/', (req, res) => {
-  res.json({ 
-    message: 'Products list endpoint',
-    filters: ['category', 'priceMin', 'priceMax', 'brand', 'material', 'tags', 'featured', 'topPick'],
-    sort: ['price', 'name', 'createdAt', 'rating'],
-    pagination: ['page', 'limit']
-  });
-});
+// ─── Public (with optional auth for admin visibility) ─
+router.get('/', optionalAuth, ProductController.list);
+router.get('/slug/:slug', optionalAuth, ProductController.getBySlug);
+router.get('/:id', optionalAuth, ProductController.getById);
 
-// Public: Get single product by slug
-router.get('/:slug', (req, res) => {
-  res.json({ message: `Get product: ${req.params.slug}` });
-});
-
-// Admin: Create product
-router.post('/', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: 'Create product' });
-});
-
-// Admin: Update product
-router.put('/:id', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: `Update product: ${req.params.id}` });
-});
-
-// Admin: Delete product
-router.delete('/:id', authenticate, requireRole(['ADMIN']), (req, res) => {
-  res.json({ message: `Delete product: ${req.params.id}` });
-});
+// ─── Admin only ─────────────────────────────────────
+router.post('/', authenticate, requireRole(['ADMIN']), ProductController.create);
+router.put('/:id', authenticate, requireRole(['ADMIN']), ProductController.update);
+router.delete('/:id', authenticate, requireRole(['ADMIN']), ProductController.delete);
 
 export default router;
