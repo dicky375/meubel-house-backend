@@ -70,7 +70,7 @@ export class User extends Model {
 
   toJSON() {
     const user = { ...this };
-    delete user.password;
+    //delete user.password;
     return user;
   }
 }

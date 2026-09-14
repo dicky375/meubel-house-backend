@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../users/user.model';
 
+// Type-safe wrapper to avoid jsonwebtoken's strict type issues with env vars
+type JwtExpiry = string | number;
+
 export class AuthService {
   static generateTokens(user: User) {
     const payload = { id: user.id, email: user.email, role: user.role };
@@ -8,13 +11,13 @@ export class AuthService {
     const accessToken = jwt.sign(
       payload,
       process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRY || '15m' }
+      { expiresIn: (process.env.JWT_EXPIRY || '15m') as JwtExpiry } as jwt.SignOptions
     );
     
     const refreshToken = jwt.sign(
       { id: user.id },
       process.env.JWT_REFRESH_SECRET!,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRY || '7d' }
+      { expiresIn: (process.env.JWT_REFRESH_EXPIRY || '7d') as JwtExpiry } as jwt.SignOptions
     );
     
     return { accessToken, refreshToken };
@@ -36,7 +39,7 @@ export class AuthService {
     const newAccessToken = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRY || '15m' }
+      { expiresIn: (process.env.JWT_EXPIRY || '15m') as JwtExpiry } as jwt.SignOptions
     );
     
     return { accessToken: newAccessToken };

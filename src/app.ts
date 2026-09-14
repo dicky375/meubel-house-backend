@@ -29,7 +29,7 @@ app.use('/api', apiLimiter);
 app.use('/api/v1', routes);
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 

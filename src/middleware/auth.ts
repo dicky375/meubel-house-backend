@@ -6,10 +6,11 @@ export interface AuthRequest extends Request {
   user?: User;
 }
 
-export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   
   const token = authHeader.split(' ')[1];
@@ -17,11 +18,13 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     const decoded: any = AuthService.verifyAccessToken(token);
     const user = await User.query().findById(decoded.id);
     if (!user || !user.isActive) {
-      return res.status(401).json({ error: 'Invalid token' });
+      res.status(401).json({ error: 'Invalid token' });
+      return;
     }
     req.user = user;
     next();
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
   }
 };
