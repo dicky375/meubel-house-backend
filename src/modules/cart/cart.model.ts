@@ -11,6 +11,10 @@ export class Cart extends Model {
   items!: Array<{
     productId: string;
     variantId?: string;
+    productName: string;
+    variantLabel?: string;
+    sku: string;
+    image?: string;
     quantity: number;
     unitPrice: number;
     subtotal: number;
