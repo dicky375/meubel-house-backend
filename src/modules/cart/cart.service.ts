@@ -22,20 +22,37 @@ export class CartService {
   private static async getOrCreate(userId: string): Promise<Cart> {
     let cart = await Cart.query().where('userId', userId).first();
     if (!cart) {
-      cart = await Cart.query().insert({
-        userId,
-        items: [],
-        subtotal: 0,
-        discount: 0,
-        total: 0,
-      });
+      // Insert using raw SQL to avoid JSONB serialization issues
+      const [row] = await Cart.knex().raw(
+        `INSERT INTO carts ("userId", items, subtotal, discount, total)
+         VALUES (?, ?::jsonb, 0, 0, 0)
+         RETURNING *`,
+        [userId, JSON.stringify([])]
+      );
+      cart = await Cart.query().findById(row.id);
     }
-    return cart;
+    return cart!;
+  }
+
+  // ─── PARSE ITEMS HELPER ─────────────────────────
+  private static parseItems(raw: any): CartItem[] {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
   }
 
   // ─── GET CART ───────────────────────────────────
   static async getCart(userId: string) {
     const cart = await this.getOrCreate(userId);
+    (cart as any).items = this.parseItems((cart as any).items);
     return cart;
   }
 
@@ -72,7 +89,6 @@ export class CartService {
         .where({ productId, variantId })
         .first();
     } else {
-      // Simple product — use inventory row with null variantId
       inventory = await Inventory.query()
         .where({ productId })
         .whereNull('variantId')
@@ -81,9 +97,9 @@ export class CartService {
 
     if (!inventory) throw new BadRequestError('No inventory record found');
 
-    // Check stock
+    // Get cart
     const cart = await this.getOrCreate(userId);
-    const items = (cart.items as CartItem[]) || [];
+    const items = this.parseItems((cart as any).items);
 
     const existingIdx = items.findIndex(
       (i) => i.productId === productId && i.variantId === variantId
@@ -99,12 +115,10 @@ export class CartService {
     }
 
     if (existingIdx >= 0) {
-      // Update quantity
       items[existingIdx].quantity = desiredQty;
+      items[existingIdx].unitPrice = unitPrice;
       items[existingIdx].subtotal = desiredQty * unitPrice;
-      items[existingIdx].unitPrice = unitPrice; // re-derive current price
     } else {
-      // Add new item
       items.push({
         productId,
         variantId,
@@ -129,7 +143,7 @@ export class CartService {
   ) {
     const { quantity } = input;
     const cart = await this.getOrCreate(userId);
-    const items = (cart.items as CartItem[]) || [];
+    const items = this.parseItems((cart as any).items);
 
     if (itemIndex < 0 || itemIndex >= items.length) {
       throw new NotFoundError('Cart item');
@@ -138,10 +152,8 @@ export class CartService {
     const item = items[itemIndex];
 
     if (quantity === 0) {
-      // Remove item
       items.splice(itemIndex, 1);
     } else {
-      // Validate stock
       const inventory = await Inventory.query()
         .where('productId', item.productId)
         .modify((qb) => {
@@ -167,7 +179,7 @@ export class CartService {
   // ─── REMOVE ITEM ────────────────────────────────
   static async removeItem(userId: string, itemIndex: number) {
     const cart = await this.getOrCreate(userId);
-    const items = (cart.items as CartItem[]) || [];
+    const items = this.parseItems((cart as any).items);
 
     if (itemIndex < 0 || itemIndex >= items.length) {
       throw new NotFoundError('Cart item');
@@ -180,25 +192,31 @@ export class CartService {
   // ─── CLEAR CART ─────────────────────────────────
   static async clear(userId: string) {
     const cart = await this.getOrCreate(userId);
-    return Cart.query().patchAndFetchById(cart.id, {
-      items: [],
-      subtotal: 0,
-      discount: 0,
-      total: 0,
-    });
+    await Cart.knex().raw(
+      `UPDATE carts SET items = ?::jsonb, subtotal = 0, discount = 0, total = 0, "updatedAt" = NOW() WHERE id = ?`,
+      [JSON.stringify([]), cart.id]
+    );
+    const updated = await Cart.query().findById(cart.id);
+    (updated as any).items = this.parseItems((updated as any).items);
+    return updated;
   }
 
   // ─── HELPERS ────────────────────────────────────
   private static async recalculateAndSave(cart: Cart, items: CartItem[]) {
     const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
-    const discount = 0; // promotions applied at checkout
+    const discount = 0;
     const total = subtotal - discount;
 
-    return Cart.query().patchAndFetchById(cart.id, {
-      items: items as any,
-      subtotal,
-      discount,
-      total,
-    });
+    // Raw SQL to bypass JSONB serialization issues in Objection
+    await Cart.knex().raw(
+      `UPDATE carts
+       SET items = ?::jsonb, subtotal = ?, discount = ?, total = ?, "updatedAt" = NOW()
+       WHERE id = ?`,
+      [JSON.stringify(items), subtotal, discount, total, cart.id]
+    );
+
+    const updated = await Cart.query().findById(cart.id);
+    (updated as any).items = this.parseItems((updated as any).items);
+    return updated;
   }
 }

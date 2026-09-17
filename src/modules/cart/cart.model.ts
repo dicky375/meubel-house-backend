@@ -8,17 +8,7 @@ export class Cart extends Model {
 
   id!: string;
   userId!: string;
-  items!: Array<{
-    productId: string;
-    variantId?: string;
-    productName: string;
-    variantLabel?: string;
-    sku: string;
-    image?: string;
-    quantity: number;
-    unitPrice: number;
-    subtotal: number;
-  }>;
+  items!: any;
   subtotal!: number;
   discount!: number;
   total!: number;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const adjustStockSchema = z.object({
-  quantity: z.coerce.number().int(),
+  quantity: z.coerce.number().int(),  // can be negative for adjustments
   type: z
     .enum([
       'STOCK_IN',
@@ -20,10 +20,7 @@ export const adjustStockSchema = z.object({
 export const inventoryQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
-  sortBy: z
-    .enum(['updatedAt', 'quantity', 'availableQuantity'])
-    .optional()
-    .default('updatedAt'),
+  sortBy: z.enum(['updatedAt', 'quantity', 'availableQuantity']).optional().default('updatedAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
   productId: z.string().uuid().optional(),
   variantId: z.string().uuid().optional(),
