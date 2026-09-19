@@ -52,3 +52,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Start the app
 CMD ["node", "dist/server.js"]
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
+# ... after USER nodejs ...
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
