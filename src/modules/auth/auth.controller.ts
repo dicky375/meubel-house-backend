@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { NotificationService } from '../notifications/notification.service';
 import { AuthService } from './auth.service';
 import { User } from '../users/user.model';
 import { z } from 'zod';
@@ -29,6 +30,8 @@ export class AuthController {
       const user = await User.query().insert(data);
       const tokens = AuthService.generateTokens(user);
       
+      NotificationService.notifyWelcome(user.id, user.firstName).catch((err) => console.error('[Auth] Welcome notification failed:', err.message));
+
       return res.status(201).json({ user, ...tokens });
     } catch (error) {
       throw error;

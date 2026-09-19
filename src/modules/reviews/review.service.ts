@@ -57,7 +57,7 @@ export class ReviewService {
     ).catch((err) =>
       console.error('[Reviews] Review-posted notification failed:', err.message)
     );
-    ;
+    
 
     return review;
   }

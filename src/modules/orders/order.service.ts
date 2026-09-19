@@ -1,4 +1,5 @@
 import { Transaction } from 'objection';
+import { NotificationService } from '../notifications/notification.service';
 import { Order } from './order.model';
 import { Cart } from '../cart/cart.model';
 import { Inventory } from '../inventory/inventory.model';
@@ -261,6 +262,8 @@ export class OrderService {
       if (!order) throw new BadRequestError('Order creation failed');
       (order as any).items = this.parseItems(order.items);
 
+      NotificationService.notifyOrderPlaced(userId, orderId, orderNumber, total).catch((err) => console.error('[Orders] Notification failed:', err.message));
+
       return order;
     });
   }
@@ -345,8 +348,38 @@ export class OrderService {
 
     if (['CANCELLED', 'RETURNED'].includes(input.orderStatus)) {
       await this.releaseOrderInventory(updated);
+
+    // Notify customer of status change (non-blocking)
+    if (order.customerId) {
+      NotificationService.notifyOrderStatusChange(
+        order.customerId,
+        order.id,
+        order.orderNumber,
+        input.orderStatus
+      ).catch((err) => console.error('[Orders] Status notification failed:', err.message));
+    }
     }
 
+    // Notify customer of status change (non-blocking)
+    if (order.customerId) {
+      NotificationService.notifyOrderStatusChange(
+        order.customerId,
+        order.id,
+        order.orderNumber,
+        input.orderStatus
+      ).catch((err) => console.error('[Orders] Status notification failed:', err.message));
+    }
+
+
+    // Notify customer of status change (non-blocking)
+    if (order.customerId) {
+      NotificationService.notifyOrderStatusChange(
+        order.customerId,
+        order.id,
+        order.orderNumber,
+        input.orderStatus
+      ).catch((err) => console.error('[Orders] Status notification failed:', err.message));
+    }
     return updated;
   }
 
