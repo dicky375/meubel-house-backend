@@ -1,15 +1,19 @@
 import knex from 'knex';
 import { Model } from 'objection';
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
+
+const isProd = process.env.NODE_ENV === 'production';
+
+const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
+const SEEDS_DIR = path.join(__dirname, '..', 'seeds');
 
 const connection = process.env.DATABASE_URL
   ? {
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' 
-        ? { rejectUnauthorized: false } 
-        : false,
+      ssl: false,
     }
   : {
       host: process.env.DB_HOST || 'localhost',
@@ -24,13 +28,13 @@ const knexInstance = knex({
   connection,
   pool: { min: 2, max: 10 },
   migrations: {
-    directory: './dist/migrations',
-    extension: 'js',
+    directory: MIGRATIONS_DIR,
+    extension: isProd ? 'js' : 'ts',
     tableName: 'knex_migrations',
   },
   seeds: {
-    directory: './dist/seeds',
-    extension: 'js',
+    directory: SEEDS_DIR,
+    extension: isProd ? 'js' : 'ts',
   },
 });
 
