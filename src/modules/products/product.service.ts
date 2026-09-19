@@ -5,6 +5,8 @@ import { InventoryService } from '../inventory/inventory.service';
 import { slugify } from '../../utils/slugify';
 import { NotFoundError, BadRequestError } from '../../utils/errors';
 import { getPagination, buildPaginatedResult } from '../../utils/pagination';
+import { ReviewController } from '../reviews/review.controller';
+import { authenticate} from  '../../middleware/auth';
 import type {
   CreateProductInput,
   UpdateProductInput,

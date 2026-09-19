@@ -23,13 +23,13 @@ export class CartService {
     let cart = await Cart.query().where('userId', userId).first();
     if (!cart) {
       // Insert using raw SQL to avoid JSONB serialization issues
-      const [row] = await Cart.knex().raw(
+            const result = await Cart.knex().raw(
         `INSERT INTO carts ("userId", items, subtotal, discount, total)
          VALUES (?, ?::jsonb, 0, 0, 0)
-         RETURNING *`,
+         RETURNING id`,
         [userId, JSON.stringify([])]
       );
-      cart = await Cart.query().findById(row.id);
+      cart = await Cart.query().findById(result.rows[0].id);
     }
     return cart!;
   }

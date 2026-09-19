@@ -15,7 +15,7 @@ export const checkoutSchema = z.object({
   customerNote: z.string().max(1000).optional(),
   deliveryFee: z.coerce.number().nonnegative().optional().default(0),
   tax: z.coerce.number().nonnegative().optional().default(0),
-  promoCode: z.string().optional(),
+  promoCode: z.string().max(30).optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

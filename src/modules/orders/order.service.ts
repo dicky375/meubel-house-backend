@@ -4,6 +4,7 @@ import { Cart } from '../cart/cart.model';
 import { Inventory } from '../inventory/inventory.model';
 import { Product } from '../products/product.model';
 import { ProductVariant } from '../products/productVariant.model';
+import { PromotionService } from '../promotions/promotion.service';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../../utils/errors';
 import { getPagination, buildPaginatedResult } from '../../utils/pagination';
 import type {
@@ -115,12 +116,44 @@ export class OrderService {
       }
 
       // 3. Calculate totals
+           // 3. Calculate totals
       const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
-      const discount = 0;
       const deliveryFee = input.deliveryFee || 0;
       const tax = input.tax || 0;
-      const total = subtotal - discount + deliveryFee + tax;
 
+      let discount = 0;
+      let deliveryDiscount = 0;
+      let appliedPromo: any = null;
+
+      if (input.promoCode) {
+        // Validate + compute discount inside the transaction
+        const Cart2 = require('../cart/cart.model').Cart;
+        const promotion = await PromotionService.applyAndIncrement(
+          input.promoCode,
+          trx
+        );
+
+        switch (promotion.type) {
+          case 'PERCENTAGE':
+            discount = (subtotal * Number(promotion.value)) / 100;
+            break;
+          case 'FIXED':
+            discount = Math.min(Number(promotion.value), subtotal);
+            break;
+          case 'FREE_SHIPPING':
+            deliveryDiscount = deliveryFee;
+            break;
+        }
+
+        appliedPromo = {
+          code: promotion.code,
+          type: promotion.type,
+          value: promotion.value,
+        };
+      }
+
+      const finalDeliveryFee = Math.max(0, deliveryFee - deliveryDiscount);
+      const total = subtotal - discount + finalDeliveryFee + tax;
       // 4. Generate order number
       const orderNumber = await this.generateOrderNumber(trx);
 
@@ -138,14 +171,14 @@ export class OrderService {
           ?::jsonb, ?::jsonb, ?, ?
         )
         RETURNING id`,
-        [
+                [
           orderNumber,
           userId,
           'ONLINE',
           JSON.stringify(orderItems),
           subtotal,
           discount,
-          deliveryFee,
+          finalDeliveryFee,  // was deliveryFee
           tax,
           total,
           'USD',
@@ -154,7 +187,9 @@ export class OrderService {
           'PENDING',
           JSON.stringify(input.shippingAddress),
           JSON.stringify(input.billingAddress || input.shippingAddress),
-          input.customerNote || null,
+          input.promoCode
+            ? `${input.customerNote || ''} [promo:${input.promoCode}]`.trim()
+            : input.customerNote || null,
           userId,
         ]
       );
