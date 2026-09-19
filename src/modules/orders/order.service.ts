@@ -2,15 +2,9 @@ import { Transaction } from 'objection';
 import { Order } from './order.model';
 import { Cart } from '../cart/cart.model';
 import { Inventory } from '../inventory/inventory.model';
-import { InventoryTransaction } from '../inventory/inventoryTransaction.model';
 import { Product } from '../products/product.model';
 import { ProductVariant } from '../products/productVariant.model';
-import { Payment } from '../payments/payment.model';
-import {
-  NotFoundError,
-  BadRequestError,
-  ForbiddenError,
-} from '../../utils/errors';
+import { NotFoundError, BadRequestError, ForbiddenError } from '../../utils/errors';
 import { getPagination, buildPaginatedResult } from '../../utils/pagination';
 import type {
   CheckoutInput,
@@ -40,17 +34,16 @@ export class OrderService {
       const cart = await Cart.query(trx).where('userId', userId).first();
       if (!cart) throw new BadRequestError('Cart not found');
 
-      const cartItems = this.parseCartItems(cart.items);
+      const cartItems = this.parseItems(cart.items) as CartItem[];
       if (cartItems.length === 0) {
         throw new BadRequestError('Cart is empty');
       }
 
       // 2. Validate products + lock inventory + re-derive prices
-      const orderItems: Order['items'] = [];
+      const orderItems: any[] = [];
       const inventoryLocks: { inventory: Inventory; quantity: number }[] = [];
 
       for (const cartItem of cartItems) {
-        // Validate product still active
         const product = await Product.query(trx).findById(cartItem.productId);
         if (!product) throw new NotFoundError(`Product ${cartItem.productName}`);
         if (!product.isActive || !product.isPublished) {
@@ -59,7 +52,6 @@ export class OrderService {
           );
         }
 
-        // Re-derive price from DB (never trust frontend/cart prices)
         let unitPrice = Number(product.price);
         let sku = product.sku;
         let variantLabel: string | undefined;
@@ -81,7 +73,7 @@ export class OrderService {
             .join(' / ');
         }
 
-        // Lock the inventory row
+        // Lock inventory row with SELECT FOR UPDATE
         const inventoryQuery = Inventory.query(trx)
           .where('productId', cartItem.productId)
           .where('storeId', DEFAULT_STORE_ID);
@@ -94,14 +86,10 @@ export class OrderService {
 
         const inventory = await inventoryQuery.forUpdate().first();
         if (!inventory) {
-          throw new BadRequestError(
-            `No inventory record for "${product.name}"`
-          );
+          throw new BadRequestError(`No inventory record for "${product.name}"`);
         }
 
-        // Check available stock
-        const available =
-          inventory.quantity - inventory.reservedQuantity;
+        const available = inventory.quantity - inventory.reservedQuantity;
         if (available < cartItem.quantity) {
           throw new BadRequestError(
             `Insufficient stock for "${product.name}"${
@@ -112,14 +100,13 @@ export class OrderService {
 
         inventoryLocks.push({ inventory, quantity: cartItem.quantity });
 
-        // Build order item snapshot
         orderItems.push({
           productId: cartItem.productId,
-          variantId: cartItem.variantId,
+          variantId: cartItem.variantId || null,
           productName: product.name,
-          variantLabel,
+          variantLabel: variantLabel || null,
           sku,
-          image: product.images?.[0],
+          image: product.images?.[0] || null,
           quantity: cartItem.quantity,
           unitPrice,
           discount: 0,
@@ -129,7 +116,7 @@ export class OrderService {
 
       // 3. Calculate totals
       const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
-      const discount = 0; // promotions later
+      const discount = 0;
       const deliveryFee = input.deliveryFee || 0;
       const tax = input.tax || 0;
       const total = subtotal - discount + deliveryFee + tax;
@@ -137,29 +124,46 @@ export class OrderService {
       // 4. Generate order number
       const orderNumber = await this.generateOrderNumber(trx);
 
-      // 5. Create Order
-      const order = await Order.query(trx).insert({
-        orderNumber,
-        customerId: userId,
-        salesChannel: 'ONLINE',
-        items: orderItems as any,
-        subtotal,
-        discount,
-        deliveryFee,
-        tax,
-        total,
-        currency: 'USD',
-        paymentStatus: 'PENDING',
-        orderStatus: 'PENDING',
-        deliveryStatus: 'PENDING',
-        shippingAddress: input.shippingAddress as any,
-        billingAddress: (input.billingAddress || input.shippingAddress) as any,
-        customerNote: input.customerNote,
-        createdBy: userId,
-      } as any);
+      // 5. Create Order (raw SQL for JSONB safety)
+      const orderInsert = await trx.raw(
+        `INSERT INTO orders (
+          "orderNumber", "customerId", "salesChannel", items,
+          subtotal, discount, "deliveryFee", tax, total, currency,
+          "paymentStatus", "orderStatus", "deliveryStatus",
+          "shippingAddress", "billingAddress", "customerNote", "createdBy"
+        ) VALUES (
+          ?, ?, ?, ?::jsonb,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?::jsonb, ?::jsonb, ?, ?
+        )
+        RETURNING id`,
+        [
+          orderNumber,
+          userId,
+          'ONLINE',
+          JSON.stringify(orderItems),
+          subtotal,
+          discount,
+          deliveryFee,
+          tax,
+          total,
+          'USD',
+          'PENDING',
+          'PENDING',
+          'PENDING',
+          JSON.stringify(input.shippingAddress),
+          JSON.stringify(input.billingAddress || input.shippingAddress),
+          input.customerNote || null,
+          userId,
+        ]
+      );
+
+      const orderId = orderInsert.rows[0].id;
 
       // 6. Reserve inventory + log transactions
       for (const { inventory, quantity } of inventoryLocks) {
+        const prevAvailable = inventory.quantity - inventory.reservedQuantity;
         const newReserved = inventory.reservedQuantity + quantity;
         const newAvailable = inventory.quantity - newReserved;
 
@@ -168,40 +172,59 @@ export class OrderService {
           availableQuantity: newAvailable,
         });
 
-        await InventoryTransaction.query(trx).insert({
-          productId: inventory.productId,
-          variantId: inventory.variantId,
-          type: 'RESERVATION',
-          quantity,
-          previousQuantity: inventory.quantity - inventory.reservedQuantity,
-          newQuantity: newAvailable,
-          referenceType: 'Order',
-          referenceId: order.id,
-          performedBy: userId,
-          reason: `Stock reserved for order ${orderNumber}`,
-        } as any);
+        await trx.raw(
+          `INSERT INTO inventory_transactions (
+            "productId", "variantId", type, quantity,
+            "previousQuantity", "newQuantity", "referenceType",
+            "referenceId", "performedBy", reason
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            inventory.productId,
+            inventory.variantId || null,
+            'RESERVATION',
+            quantity,
+            prevAvailable,
+            newAvailable,
+            'Order',
+            orderId,
+            userId,
+            `Stock reserved for order ${orderNumber}`,
+          ]
+        );
       }
 
       // 7. Create Payment record (PENDING — no provider yet)
-      await Payment.query(trx).insert({
-        orderId: order.id,
-        userId,
-        provider: 'MANUAL',
-        transactionReference: `TXN-${orderNumber}`,
-        amount: total,
-        currency: 'USD',
-        status: 'PENDING',
-        amountPaid: 0,
-        amountDue: total,
-      } as any);
+      await trx.raw(
+        `INSERT INTO payments (
+          "orderId", "userId", provider, "transactionReference",
+          amount, currency, status, "amountPaid", "amountDue"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderId,
+          userId,
+          'MANUAL',
+          `TXN-${orderNumber}`,
+          total,
+          'USD',
+          'PENDING',
+          0,
+          total,
+        ]
+      );
 
       // 8. Clear cart
-      await Cart.query(trx).patchAndFetchById(cart.id, {
-        items: [] as any,
-        subtotal: 0,
-        discount: 0,
-        total: 0,
-      });
+      await trx.raw(
+        `UPDATE carts SET items = ?::jsonb, subtotal = 0, discount = 0, total = 0, "updatedAt" = NOW() WHERE id = ?`,
+        [JSON.stringify([]), cart.id]
+      );
+
+      // 9. Reload order with relations
+      const order = await Order.query(trx)
+        .findById(orderId)
+        .withGraphFetched('[customer, payments]');
+
+      if (!order) throw new BadRequestError('Order creation failed');
+      (order as any).items = this.parseItems(order.items);
 
       return order;
     });
@@ -224,6 +247,8 @@ export class OrderService {
       .offset(offset)
       .withGraphFetched('payments');
 
+    data.forEach((o) => ((o as any).items = this.parseItems(o.items)));
+
     return buildPaginatedResult(data, total, page, limit);
   }
 
@@ -235,11 +260,11 @@ export class OrderService {
 
     if (!order) throw new NotFoundError('Order');
 
-    // Customers can only see their own orders
     if (!isAdmin && order.customerId !== userId) {
       throw new ForbiddenError('You cannot view this order');
     }
 
+    (order as any).items = this.parseItems(order.items);
     return order;
   }
 
@@ -253,9 +278,7 @@ export class OrderService {
     if (query.paymentStatus) qb = qb.where('paymentStatus', query.paymentStatus);
     if (query.salesChannel) qb = qb.where('salesChannel', query.salesChannel);
     if (query.customerId) qb = qb.where('customerId', query.customerId);
-    if (query.search) {
-      qb = qb.where('orderNumber', 'ilike', `%${query.search}%`);
-    }
+    if (query.search) qb = qb.where('orderNumber', 'ilike', `%${query.search}%`);
 
     const total = await qb.clone().resultSize();
 
@@ -265,6 +288,8 @@ export class OrderService {
       .offset(offset)
       .withGraphFetched('[customer, salesRep, payments]');
 
+    data.forEach((o) => ((o as any).items = this.parseItems(o.items)));
+
     return buildPaginatedResult(data, total, page, limit);
   }
 
@@ -273,7 +298,6 @@ export class OrderService {
     const order = await Order.query().findById(orderId);
     if (!order) throw new NotFoundError('Order');
 
-    // Prevent invalid transitions
     if (['CANCELLED', 'REFUNDED', 'COMPLETED'].includes(order.orderStatus)) {
       throw new BadRequestError(
         `Cannot change status of a ${order.orderStatus} order`
@@ -284,7 +308,6 @@ export class OrderService {
       orderStatus: input.orderStatus,
     });
 
-    // On cancel/return: release inventory
     if (['CANCELLED', 'RETURNED'].includes(input.orderStatus)) {
       await this.releaseOrderInventory(order);
     }
@@ -305,12 +328,12 @@ export class OrderService {
       orderStatus: 'CANCELLED',
     });
 
-    await this.releaseOrderInventory(order);
+    await this.releaseOrderInventory(updated);
     return updated;
   }
 
   // ─── HELPERS ────────────────────────────────────
-  private static parseCartItems(raw: any): CartItem[] {
+  private static parseItems(raw: any): any[] {
     if (!raw) return [];
     if (Array.isArray(raw)) return raw;
     if (typeof raw === 'string') {
@@ -344,7 +367,7 @@ export class OrderService {
   }
 
   private static async releaseOrderInventory(order: Order) {
-    const items = (order.items as any[]) || [];
+    const items = this.parseItems(order.items);
 
     await Order.transaction(async (trx) => {
       for (const item of items) {
@@ -361,6 +384,7 @@ export class OrderService {
         const inventory = await invQuery.forUpdate().first();
         if (!inventory) continue;
 
+        const prevAvailable = inventory.quantity - inventory.reservedQuantity;
         const newReserved = Math.max(
           0,
           inventory.reservedQuantity - item.quantity
@@ -372,17 +396,24 @@ export class OrderService {
           availableQuantity: newAvailable,
         });
 
-        await InventoryTransaction.query(trx).insert({
-          productId: item.productId,
-          variantId: item.variantId,
-          type: 'RELEASE',
-          quantity: item.quantity,
-          previousQuantity: inventory.quantity - inventory.reservedQuantity,
-          newQuantity: newAvailable,
-          referenceType: 'Order',
-          referenceId: order.id,
-          reason: `Release on ${order.orderStatus} for ${order.orderNumber}`,
-        } as any);
+        await trx.raw(
+          `INSERT INTO inventory_transactions (
+            "productId", "variantId", type, quantity,
+            "previousQuantity", "newQuantity", "referenceType",
+            "referenceId", "reason"
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            item.productId,
+            item.variantId || null,
+            'RELEASE',
+            item.quantity,
+            prevAvailable,
+            newAvailable,
+            'Order',
+            order.id,
+            `Release on ${order.orderStatus} for ${order.orderNumber}`,
+          ]
+        );
       }
     });
   }
