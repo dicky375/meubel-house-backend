@@ -309,7 +309,7 @@ export class OrderService {
     });
 
     if (['CANCELLED', 'RETURNED'].includes(input.orderStatus)) {
-      await this.releaseOrderInventory(order);
+      await this.releaseOrderInventory(updated);
     }
 
     return updated;
