@@ -13,16 +13,17 @@ export class Order extends Model {
   salesChannel!: 'ONLINE' | 'IN_STORE';
   salesRepId?: string;
   items!: Array<{
-    productId: string;
-    variantId?: string;
-    productName: string;
-    sku: string;
-    image?: string;
-    quantity: number;
-    unitPrice: number;
-    discount: number;
-    subtotal: number;
-  }>;
+  productId: string;
+  variantId?: string;
+  productName: string;
+  variantLabel?: string;
+  sku: string;
+  image?: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  subtotal: number;
+}>;
   subtotal!: number;
   discount!: number;
   deliveryFee!: number;
