@@ -19,7 +19,7 @@ export class OrderController {
     }
   }
 
-  // GET /orders (my orders)
+  // GET /orders (my orders — customer)
   static async myOrders(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const query = orderQuerySchema.parse(req.query);
@@ -33,11 +33,10 @@ export class OrderController {
   // GET /orders/:id
   static async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const isAdmin = req.user!.role === 'ADMIN';
       const order = await OrderService.getById(
         String(req.params.id),
         req.user!.id,
-        isAdmin
+        req.user!.role
       );
       res.json({ order });
     } catch (error) {
@@ -45,7 +44,7 @@ export class OrderController {
     }
   }
 
-  // POST /orders/:id/cancel
+  // POST /orders/:id/cancel (customer)
   static async cancel(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const order = await OrderService.cancelOrder(
@@ -58,18 +57,33 @@ export class OrderController {
     }
   }
 
-  // GET /orders/admin/all  (admin)
+  // GET /orders/admin/all (admin — all orders)
   static async listAll(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const query = orderQuerySchema.parse(req.query);
-      const result = await OrderService.findAll(query);
+      const result = await OrderService.findAll(query, req.user!.id, 'ADMIN');
       res.json(result);
     } catch (error) {
       next(error);
     }
   }
 
-  // PATCH /orders/admin/:id/status  (admin)
+  // GET /orders/sales-rep/all (sales rep — own sales)
+  static async listMine(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const query = orderQuerySchema.parse(req.query);
+      const result = await OrderService.findAll(
+        query,
+        req.user!.id,
+        req.user!.role
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /orders/admin/:id/status (admin)
   static async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const data = updateOrderStatusSchema.parse(req.body);
