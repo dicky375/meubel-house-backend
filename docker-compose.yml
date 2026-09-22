@@ -3,58 +3,46 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: meubel_house_db
-    restart: unless-stopped
+    container_name: meubel_house_db_docker
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-meubel_house}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meubel_house
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-meubel_house}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d meubel_house"]
+      interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: meubel_house_api
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    container_name: meubel_house_api_docker
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
       PORT: 5000
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      DB_NAME: ${DB_NAME:-meubel_house}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      JWT_EXPIRY: ${JWT_EXPIRY:-15m}
-      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-7d}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: meubel_house
+      JWT_SECRET: meubel_house_docker_jwt_secret_2024
+      JWT_REFRESH_SECRET: meubel_house_docker_refresh_secret_2024
+      JWT_EXPIRY: 2h
+      JWT_REFRESH_EXPIRY: 7d
+      FRONTEND_URL: "*"
     ports:
-      - "5000:5000"
-    command: >
-      sh -c "
-        if [ \"$$RUN_MIGRATIONS\" = \"true\" ]; then
-          echo '⏳ Running migrations...'
-          npx knex migrate:latest --knexfile dist/config/knexfile.js &&
-          echo '✅ Migrations complete'
-        fi &&
-        echo '🚀 Starting API...' &&
-        node dist/server.js
-      "
+      - "5001:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-    name: meubel_house_postgres_data
