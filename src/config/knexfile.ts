@@ -4,11 +4,7 @@ import path from 'path';
 
 dotenv.config();
 
-// __dirname resolves to:
-//   dev (ts-node):  .../src/config  → ../migrations = src/migrations (.ts)
-//   prod (compiled): .../dist/config → ../migrations = dist/migrations (.js)
-const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
-const SEEDS_DIR = path.join(__dirname, '..', 'seeds');
+const ROOT = path.resolve(__dirname, '../..');
 
 const config: { [key: string]: Knex.Config } = {
   development: {
@@ -22,21 +18,22 @@ const config: { [key: string]: Knex.Config } = {
     },
     pool: { min: 2, max: 10 },
     migrations: {
-      directory: MIGRATIONS_DIR,
+      directory: path.join(ROOT, 'src/migrations'),
       extension: 'ts',
       tableName: 'knex_migrations',
     },
     seeds: {
-      directory: SEEDS_DIR,
+      directory: path.join(ROOT, 'src/seeds'),
       extension: 'ts',
     },
   },
+
   production: {
     client: 'postgresql',
     connection: process.env.DATABASE_URL
       ? {
           connectionString: process.env.DATABASE_URL,
-          ssl: false,
+          ssl: { rejectUnauthorized: false },
         }
       : {
           host: process.env.DB_HOST,
@@ -44,17 +41,13 @@ const config: { [key: string]: Knex.Config } = {
           user: process.env.DB_USER,
           password: process.env.DB_PASSWORD,
           database: process.env.DB_NAME,
-          ssl: false,
+          ssl: { rejectUnauthorized: false },
         },
     pool: { min: 2, max: 10 },
     migrations: {
-      directory: MIGRATIONS_DIR,
+      directory: path.join(ROOT, 'dist/migrations'),
       extension: 'js',
       tableName: 'knex_migrations',
-    },
-    seeds: {
-      directory: SEEDS_DIR,
-      extension: 'js',
     },
   },
 };
