@@ -1,0 +1,14 @@
+#!/bin/bash
+RESPONSE=$(curl -s -X POST https://meubel-house-backend.onrender.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@meubel.com","password":"password123"}')
+
+TOKEN=$(echo "$RESPONSE" | grep -oP '"accessToken":"\K[^"]+')
+
+if [ -n "$TOKEN" ]; then
+  echo "$TOKEN" > .admin_token
+  echo "✅ Token refreshed: ${#TOKEN} chars"
+else
+  echo "❌ Failed. Response: $RESPONSE"
+  exit 1
+fi
