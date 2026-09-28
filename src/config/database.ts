@@ -4,7 +4,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const connection = process.env.DATABASE_URL
+const isProd = process.env.NODE_ENV === 'production';
+const useDatabaseUrl = isProd && !!process.env.DATABASE_URL;
+
+function needsSSL(host?: string): boolean {
+  if (!host) return false;
+  return !['localhost', '127.0.0.1', 'postgres', 'db'].includes(host);
+}
+
+const connection = useDatabaseUrl
   ? {
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
@@ -15,6 +23,9 @@ const connection = process.env.DATABASE_URL
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
       database: process.env.DB_NAME || 'meubel_house',
+      ssl: needsSSL(process.env.DB_HOST)
+        ? { rejectUnauthorized: false }
+        : false,
     };
 
 const knexInstance = knex({
