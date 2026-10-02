@@ -11,6 +11,7 @@ import reviewRoutes from '../modules/reviews/review.routes';
 import promotionRoutes from '../modules/promotions/promotion.routes';
 import reportRoutes from '../modules/reports/report.routes';
 import notificationRoutes from '../modules/notifications/notification.routes';
+import uploadRoutes from '../modules/uploads/upload.routes';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/reviews', reviewRoutes);
 router.use('/promotions', promotionRoutes);
 router.use('/reports', reportRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/uploads', uploadRoutes);
 
 export default router;

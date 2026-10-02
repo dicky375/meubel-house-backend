@@ -153,12 +153,17 @@ Both channels produce the same \`Order\` records, distinguished by \`salesChanne
         },
       },
     },
-    tags: [
+        tags: [
       { name: 'Auth', description: 'Authentication & registration' },
       { name: 'Users', description: 'User management' },
       { name: 'Categories', description: 'Product categories' },
       { name: 'Products', description: 'Product catalogue' },
       { name: 'Inventory', description: 'Stock tracking & adjustments' },
+      { name: 'Cart', description: 'Shopping cart' },
+      { name: 'Orders', description: 'Order management & checkout' },
+      { name: 'Sales', description: 'In-store sales (sales rep)' },
+      { name: 'Reviews', description: 'Product reviews' },
+      { name: 'Uploads', description: 'Image uploads (Cloudinary)' },
     ],
   },
   apis: [
