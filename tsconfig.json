@@ -13,6 +13,7 @@
     "strictNullChecks": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "removeComments": false,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",

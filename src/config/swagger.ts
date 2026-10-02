@@ -162,8 +162,10 @@ Both channels produce the same \`Order\` records, distinguished by \`salesChanne
     ],
   },
   apis: [
-    './src/modules/**/*.routes.ts',
-    './src/modules/**/*.controller.ts',
+    './src/modules/**/*.routes.{ts,js}',
+    './dist/modules/**/*.routes.js',
+    './src/modules/**/*.controller.{ts,js}',
+    './dist/modules/**/*.controller.js',
   ],
 };
 
