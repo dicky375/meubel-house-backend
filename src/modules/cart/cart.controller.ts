@@ -1,6 +1,10 @@
 import { Response, NextFunction } from 'express';
 import { CartService } from './cart.service';
-import { addToCartSchema, updateCartItemSchema } from './cart.validation';
+import {
+  addToCartSchema,
+  updateCartItemSchema,
+  cartItemIndexParam,
+} from './cart.validation';
 import type { AuthRequest } from '../../middleware/auth';
 
 export class CartController {
@@ -28,9 +32,10 @@ export class CartController {
   // PATCH /cart/items/:index
   static async updateItem(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const itemIndex = parseInt(String(req.params.index), 10);
+      // Strict integer parse — throws ZodError if invalid
+      const index = cartItemIndexParam.parse(String(req.params.index));
       const data = updateCartItemSchema.parse(req.body);
-      const cart = await CartService.updateItem(req.user!.id, itemIndex, data);
+      const cart = await CartService.updateItem(req.user!.id, index, data);
       res.json({ cart });
     } catch (error) {
       next(error);
@@ -40,8 +45,8 @@ export class CartController {
   // DELETE /cart/items/:index
   static async removeItem(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const itemIndex = parseInt(String(req.params.index), 10);
-      const cart = await CartService.removeItem(req.user!.id, itemIndex);
+      const index = cartItemIndexParam.parse(String(req.params.index));
+      const cart = await CartService.removeItem(req.user!.id, index);
       res.json({ cart });
     } catch (error) {
       next(error);
