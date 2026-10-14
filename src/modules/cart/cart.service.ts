@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Cart } from './cart.model';
 import { Product } from '../products/product.model';
 import { ProductVariant } from '../products/productVariant.model';
@@ -6,6 +7,7 @@ import { NotFoundError, BadRequestError } from '../../utils/errors';
 import type { AddToCartInput, UpdateCartItemInput } from './cart.validation';
 
 interface CartItem {
+  cartItemId: string;        // ← stable ID, always present
   productId: string;
   variantId?: string;
   productName: string;
@@ -22,8 +24,7 @@ export class CartService {
   private static async getOrCreate(userId: string): Promise<Cart> {
     let cart = await Cart.query().where('userId', userId).first();
     if (!cart) {
-      // Insert using raw SQL to avoid JSONB serialization issues
-            const result = await Cart.knex().raw(
+      const result = await Cart.knex().raw(
         `INSERT INTO carts ("userId", items, subtotal, discount, total)
          VALUES (?, ?::jsonb, 0, 0, 0)
          RETURNING id`,
@@ -34,25 +35,64 @@ export class CartService {
     return cart!;
   }
 
-  // ─── PARSE ITEMS HELPER ─────────────────────────
+  // ─── PARSE ITEMS HELPER (backfills cartItemId for legacy items) ─
   private static parseItems(raw: any): CartItem[] {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === 'string') {
+    let arr: any[] = [];
+    if (!raw) arr = [];
+    else if (Array.isArray(raw)) arr = raw;
+    else if (typeof raw === 'string') {
       try {
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
+        arr = Array.isArray(parsed) ? parsed : [];
       } catch {
-        return [];
+        arr = [];
       }
     }
-    return [];
+    // Backfill missing cartItemId (for carts created before this change)
+    return arr.map((i) => ({
+      ...i,
+      cartItemId: i.cartItemId || randomUUID(),
+    }));
+  }
+
+  // ─── RESOLVE ITEM BY REF (index OR cartItemId) ──
+  private static resolveItem(
+    items: CartItem[],
+    ref: string
+  ): { item: CartItem; index: number } {
+    // UUID format? match by cartItemId
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) {
+      const index = items.findIndex((i) => i.cartItemId === ref);
+      if (index === -1) throw new NotFoundError('Cart item');
+      return { item: items[index], index };
+    }
+
+    // Otherwise treat as integer index
+    if (/^\d+$/.test(ref)) {
+      const index = parseInt(ref, 10);
+      if (index < 0 || index >= items.length) throw new NotFoundError('Cart item');
+      return { item: items[index], index };
+    }
+
+    throw new BadRequestError('Invalid cart item reference');
   }
 
   // ─── GET CART ───────────────────────────────────
   static async getCart(userId: string) {
     const cart = await this.getOrCreate(userId);
-    (cart as any).items = this.parseItems((cart as any).items);
+    const items = this.parseItems((cart as any).items);
+
+    // If backfill added IDs, persist them
+    const original = JSON.stringify((cart as any).items || []);
+    const backfilled = JSON.stringify(items);
+    if (original !== backfilled) {
+      await Cart.knex().raw(
+        `UPDATE carts SET items = ?::jsonb, "updatedAt" = NOW() WHERE id = ?`,
+        [backfilled, cart.id]
+      );
+    }
+
+    (cart as any).items = items;
     return cart;
   }
 
@@ -60,14 +100,12 @@ export class CartService {
   static async addItem(userId: string, input: AddToCartInput) {
     const { productId, variantId, quantity } = input;
 
-    // Load product + validate visibility
     const product = await Product.query().findById(productId);
     if (!product) throw new NotFoundError('Product');
     if (!product.isActive || !product.isPublished) {
       throw new BadRequestError('Product is not available for purchase');
     }
 
-    // Determine price & stock source
     let unitPrice = Number(product.price);
     let variantLabel: string | undefined;
     let sku = product.sku;
@@ -97,7 +135,6 @@ export class CartService {
 
     if (!inventory) throw new BadRequestError('No inventory record found');
 
-    // Get cart
     const cart = await this.getOrCreate(userId);
     const items = this.parseItems((cart as any).items);
 
@@ -120,6 +157,7 @@ export class CartService {
       items[existingIdx].subtotal = desiredQty * unitPrice;
     } else {
       items.push({
+        cartItemId: randomUUID(),
         productId,
         variantId,
         productName: product.name,
@@ -135,24 +173,20 @@ export class CartService {
     return this.recalculateAndSave(cart, items);
   }
 
-  // ─── UPDATE ITEM QUANTITY ───────────────────────
+  // ─── UPDATE ITEM (by index OR cartItemId) ───────
   static async updateItem(
     userId: string,
-    itemIndex: number,
+    ref: string,
     input: UpdateCartItemInput
   ) {
     const { quantity } = input;
     const cart = await this.getOrCreate(userId);
     const items = this.parseItems((cart as any).items);
 
-    if (itemIndex < 0 || itemIndex >= items.length) {
-      throw new NotFoundError('Cart item');
-    }
-
-    const item = items[itemIndex];
+    const { item, index } = this.resolveItem(items, ref);
 
     if (quantity === 0) {
-      items.splice(itemIndex, 1);
+      items.splice(index, 1);
     } else {
       const inventory = await Inventory.query()
         .where('productId', item.productId)
@@ -176,16 +210,14 @@ export class CartService {
     return this.recalculateAndSave(cart, items);
   }
 
-  // ─── REMOVE ITEM ────────────────────────────────
-  static async removeItem(userId: string, itemIndex: number) {
+  // ─── REMOVE ITEM (by index OR cartItemId) ───────
+  static async removeItem(userId: string, ref: string) {
     const cart = await this.getOrCreate(userId);
     const items = this.parseItems((cart as any).items);
 
-    if (itemIndex < 0 || itemIndex >= items.length) {
-      throw new NotFoundError('Cart item');
-    }
+    const { index } = this.resolveItem(items, ref);
 
-    items.splice(itemIndex, 1);
+    items.splice(index, 1);
     return this.recalculateAndSave(cart, items);
   }
 
@@ -207,7 +239,6 @@ export class CartService {
     const discount = 0;
     const total = subtotal - discount;
 
-    // Raw SQL to bypass JSONB serialization issues in Objection
     await Cart.knex().raw(
       `UPDATE carts
        SET items = ?::jsonb, subtotal = ?, discount = ?, total = ?, "updatedAt" = NOW()

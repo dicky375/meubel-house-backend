@@ -3,7 +3,7 @@ import { CartService } from './cart.service';
 import {
   addToCartSchema,
   updateCartItemSchema,
-  cartItemIndexParam,
+  cartItemRefParam,
 } from './cart.validation';
 import type { AuthRequest } from '../../middleware/auth';
 
@@ -29,24 +29,23 @@ export class CartController {
     }
   }
 
-  // PATCH /cart/items/:index
+  // PATCH /cart/items/:index  →  index can be integer OR cartItemId UUID
   static async updateItem(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      // Strict integer parse — throws ZodError if invalid
-      const index = cartItemIndexParam.parse(String(req.params.index));
+      const ref = cartItemRefParam.parse(String(req.params.index));
       const data = updateCartItemSchema.parse(req.body);
-      const cart = await CartService.updateItem(req.user!.id, index, data);
+      const cart = await CartService.updateItem(req.user!.id, ref, data);
       res.json({ cart });
     } catch (error) {
       next(error);
     }
   }
 
-  // DELETE /cart/items/:index
+  // DELETE /cart/items/:index  →  index can be integer OR cartItemId UUID
   static async removeItem(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const index = cartItemIndexParam.parse(String(req.params.index));
-      const cart = await CartService.removeItem(req.user!.id, index);
+      const ref = cartItemRefParam.parse(String(req.params.index));
+      const cart = await CartService.removeItem(req.user!.id, ref);
       res.json({ cart });
     } catch (error) {
       next(error);
